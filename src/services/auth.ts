@@ -1,4 +1,5 @@
 import type { AuthUser, LoginPayload } from "@/types/auth";
+import { getApiUrl } from "@/lib/api";
 
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -10,7 +11,7 @@ async function handleResponse<T>(response: Response): Promise<T> {
 }
 
 export async function login(payload: LoginPayload): Promise<AuthUser> {
-  const response = await fetch("/api/auth/login", {
+  const response = await fetch(getApiUrl("/api/auth/login"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

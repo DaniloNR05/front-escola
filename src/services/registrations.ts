@@ -5,6 +5,7 @@ import type {
   Registration,
   RegistrationType,
 } from "@/types/registration";
+import { getApiUrl } from "@/lib/api";
 
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -30,14 +31,14 @@ export async function getRegistrations(filters?: {
   }
 
   const query = params.toString() ? `?${params.toString()}` : "";
-  const response = await fetch(`/api/registrations${query}`);
+  const response = await fetch(getApiUrl(`/api/registrations${query}`));
   return handleResponse<Registration[]>(response);
 }
 
 export async function createRegistration(
   payload: CreateRegistrationPayload,
 ): Promise<CreateRegistrationResponse> {
-  const response = await fetch("/api/registrations", {
+  const response = await fetch(getApiUrl("/api/registrations"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -52,7 +53,7 @@ export async function addRegistrationAthlete(
   registrationId: string,
   payload: CreateAthletePayload,
 ): Promise<Registration> {
-  const response = await fetch(`/api/registrations/${registrationId}/athletes`, {
+  const response = await fetch(getApiUrl(`/api/registrations/${registrationId}/athletes`), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

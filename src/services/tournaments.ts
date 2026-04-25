@@ -1,4 +1,5 @@
 import type { CreateTournamentPayload, Tournament } from "@/types/tournament";
+import { getApiUrl } from "@/lib/api";
 
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -10,12 +11,12 @@ async function handleResponse<T>(response: Response): Promise<T> {
 }
 
 export async function getTournaments(): Promise<Tournament[]> {
-  const response = await fetch("/api/tournaments");
+  const response = await fetch(getApiUrl("/api/tournaments"));
   return handleResponse<Tournament[]>(response);
 }
 
 export async function createTournament(payload: CreateTournamentPayload): Promise<Tournament> {
-  const response = await fetch("/api/tournaments", {
+  const response = await fetch(getApiUrl("/api/tournaments"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
