@@ -2,4 +2,7 @@ node_modules
 dist
 dist-ssr
 .vite
+.env
+.env.*
+!.env.example
 *.local
