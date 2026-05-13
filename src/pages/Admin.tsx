@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { ScrollReveal } from "@/components/ScrollReveal";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,7 +15,7 @@ import { useTournaments } from "@/hooks/use-tournaments";
 import { createTournament } from "@/services/tournaments";
 import type { TournamentStatus, TournamentType } from "@/types/tournament";
 import { toast } from "sonner";
-import { School, Trophy, Users } from "lucide-react";
+import { CalendarDays, ChevronRight, ClipboardList, MapPin, School, Trophy, UserRound, Users } from "lucide-react";
 
 type TournamentFormState = {
   title: string;
@@ -52,8 +53,34 @@ function formatDate(date: string) {
   }).format(parsedDate);
 }
 
+function formatDateRange(startDate: string, endDate: string) {
+  return `${formatDate(startDate)} ate ${formatDate(endDate)}`;
+}
+
+function getFlowLabel(type: TournamentType) {
+  return type === "escolar" ? "Professor cadastra a escola" : "Capitao cadastra o time";
+}
+
+function getGroupLabel(type: TournamentType) {
+  return type === "escolar" ? "Escolas" : "Times";
+}
+
+function getRegisteredGroupLabel(type: TournamentType) {
+  return type === "escolar" ? "Escolas inscritas" : "Times inscritos";
+}
+
+function getAthleteLabel(type: TournamentType) {
+  return type === "escolar" ? "Atletas" : "Jogadores";
+}
+
+function getTypeLabel(type: TournamentType) {
+  return type === "escolar" ? "Jogos Escolares" : "Torneio Municipal / Comunidade";
+}
+
 export default function Admin() {
   const [formState, setFormState] = useState<TournamentFormState>(initialFormState);
+  const [overviewType, setOverviewType] = useState<TournamentType>("municipal");
+  const [selectedTournamentId, setSelectedTournamentId] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const tournamentsQuery = useTournaments();
@@ -80,6 +107,7 @@ export default function Admin() {
 
   const handleCreateTournament = (e: React.FormEvent) => {
     e.preventDefault();
+    setOverviewType(formState.type);
 
     createTournamentMutation.mutate({
       title: formState.title,
@@ -94,16 +122,17 @@ export default function Admin() {
   };
 
   const isSchoolTournament = formState.type === "escolar";
+  const isSchoolOverview = overviewType === "escolar";
   const filteredTournaments = useMemo(
-    () => (tournamentsQuery.data ?? []).filter((tournament) => tournament.type === formState.type),
-    [formState.type, tournamentsQuery.data],
+    () => (tournamentsQuery.data ?? []).filter((tournament) => tournament.type === overviewType),
+    [overviewType, tournamentsQuery.data],
   );
   const filteredRegistrations = useMemo(
     () =>
       (registrationsQuery.data ?? []).filter((registration) =>
-        isSchoolTournament ? registration.type === "jep" : registration.type === "comunidade",
+        isSchoolOverview ? registration.type === "jep" : registration.type === "comunidade",
       ),
-    [isSchoolTournament, registrationsQuery.data],
+    [isSchoolOverview, registrationsQuery.data],
   );
   const filteredAthletes = useMemo(
     () =>
@@ -116,6 +145,38 @@ export default function Admin() {
       ),
     [filteredRegistrations],
   );
+  const selectedTournament = useMemo(
+    () => filteredTournaments.find((tournament) => tournament.id === selectedTournamentId) ?? filteredTournaments[0] ?? null,
+    [filteredTournaments, selectedTournamentId],
+  );
+  const selectedTournamentRegistrations = useMemo(
+    () =>
+      selectedTournament
+        ? filteredRegistrations.filter((registration) => registration.tournamentId === selectedTournament.id)
+        : [],
+    [filteredRegistrations, selectedTournament],
+  );
+  const selectedTournamentAthletes = useMemo(
+    () =>
+      selectedTournamentRegistrations.flatMap((registration) =>
+        registration.athletes.map((athlete) => ({
+          ...athlete,
+          organizationName: registration.organizationName,
+        })),
+      ),
+    [selectedTournamentRegistrations],
+  );
+
+  useEffect(() => {
+    if (filteredTournaments.length === 0) {
+      setSelectedTournamentId(null);
+      return;
+    }
+
+    if (!selectedTournamentId || !filteredTournaments.some((tournament) => tournament.id === selectedTournamentId)) {
+      setSelectedTournamentId(filteredTournaments[0].id);
+    }
+  }, [filteredTournaments, selectedTournamentId]);
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-50">
@@ -282,114 +343,272 @@ export default function Admin() {
               <ScrollReveal delay={100}>
                 <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
                   <div className="border-b bg-primary/10 p-6">
-                    <h2 className="flex items-center gap-2 text-xl font-bold text-primary">
-                      {isSchoolTournament ? <School className="h-5 w-5" /> : <Users className="h-5 w-5" />}
-                      {isSchoolTournament ? "Acompanhamento do JEP" : "Acompanhamento da Comunidade"}
-                    </h2>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {isSchoolTournament
-                        ? "Professores cadastram escolas e atletas no portal. Aqui o admin acompanha as inscrições recebidas."
-                        : "Capitães cadastram os times e os jogadores no portal. Aqui o admin acompanha as inscrições recebidas."}
-                    </p>
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                      <div>
+                        <h2 className="flex items-center gap-2 text-xl font-bold text-primary">
+                          <ClipboardList className="h-5 w-5" />
+                          Torneios Cadastrados
+                        </h2>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          Selecione um campeonato para ver informacoes, equipes inscritas e {getAthleteLabel(overviewType).toLowerCase()}.
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 rounded-xl border bg-background p-2">
+                        <button
+                          type="button"
+                          onClick={() => setOverviewType("municipal")}
+                          className={`rounded-lg border px-4 py-2 text-sm font-medium transition ${
+                            overviewType === "municipal"
+                              ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                              : "border-border bg-background text-foreground hover:bg-accent"
+                          }`}
+                        >
+                          Comunidade
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setOverviewType("escolar")}
+                          className={`rounded-lg border px-4 py-2 text-sm font-medium transition ${
+                            overviewType === "escolar"
+                              ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                              : "border-border bg-background text-foreground hover:bg-accent"
+                          }`}
+                        >
+                          Jogos Escolares
+                        </button>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="p-6">
-                    <Tabs
-                      defaultValue={isSchoolTournament ? "organizacoes" : "organizacoes"}
-                      className="w-full"
-                    >
-                      <TabsList className="mb-6 grid w-full grid-cols-3">
-                        <TabsTrigger value="organizacoes">{isSchoolTournament ? "Escolas" : "Times"}</TabsTrigger>
-                        <TabsTrigger value="modalidades">Modalidades</TabsTrigger>
-                        <TabsTrigger value="atletas">{isSchoolTournament ? "Atletas" : "Jogadores"}</TabsTrigger>
-                      </TabsList>
+                    {tournamentsQuery.isLoading && (
+                      <p className="text-sm text-muted-foreground">Carregando campeonatos...</p>
+                    )}
 
-                      <TabsContent value="organizacoes" className="space-y-4">
-                        {registrationsQuery.isLoading && (
-                          <p className="text-sm text-muted-foreground">Carregando inscrições...</p>
-                        )}
+                    {tournamentsQuery.isSuccess && filteredTournaments.length === 0 && (
+                      <div className="rounded-md border p-6 text-center">
+                        <p className="text-sm text-muted-foreground">
+                          Nenhum campeonato cadastrado para {overviewType === "escolar" ? "os jogos escolares" : "a comunidade"}.
+                        </p>
+                      </div>
+                    )}
 
-                        {registrationsQuery.isSuccess && filteredRegistrations.length === 0 && (
-                          <div className="rounded-md border p-4">
-                            <p className="py-4 text-center text-sm text-muted-foreground">
-                              Nenhuma {isSchoolTournament ? "escola" : "equipe"} inscrita ainda.
-                            </p>
-                          </div>
-                        )}
+                    {filteredTournaments.length > 0 && (
+                      <div className="grid gap-6 xl:grid-cols-[320px_1fr]">
+                        <div className="space-y-3">
+                          {filteredTournaments.map((tournament) => {
+                            const registrationsCount = filteredRegistrations.filter(
+                              (registration) => registration.tournamentId === tournament.id,
+                            ).length;
 
-                        {filteredRegistrations.map((registration) => (
-                          <div key={registration.id} className="rounded-lg border p-4">
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <h3 className="font-semibold text-foreground">{registration.organizationName}</h3>
-                                <p className="mt-1 text-sm text-muted-foreground">
-                                  {registration.tournamentTitle}
-                                </p>
+                            return (
+                              <button
+                                key={tournament.id}
+                                type="button"
+                                onClick={() => setSelectedTournamentId(tournament.id)}
+                                className={`w-full rounded-xl border p-4 text-left transition ${
+                                  selectedTournament?.id === tournament.id
+                                    ? "border-primary bg-primary/5 shadow-sm"
+                                    : "border-border bg-background hover:border-primary/40 hover:bg-accent/40"
+                                }`}
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <div className="font-semibold text-foreground">{tournament.title}</div>
+                                    <div className="mt-1 text-sm text-muted-foreground">{tournament.modality}</div>
+                                  </div>
+                                  <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                                </div>
+                                <div className="mt-3 text-xs text-muted-foreground">
+                                  {formatDateRange(tournament.startDate, tournament.endDate)}
+                                </div>
+                                <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+                                  <span>{registrationsCount} {getRegisteredGroupLabel(overviewType).toLowerCase()}</span>
+                                  <span>{tournament.status}</span>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {selectedTournament && (
+                          <div className="rounded-xl border bg-background">
+                            <div className="border-b p-6">
+                              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                                <div>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <Badge variant="secondary">{selectedTournament.status}</Badge>
+                                    <Badge variant="outline">{getTypeLabel(selectedTournament.type)}</Badge>
+                                  </div>
+                                  <h3 className="mt-3 text-2xl font-bold text-foreground">
+                                    {selectedTournament.title}
+                                  </h3>
+                                  <p className="mt-1 text-sm text-muted-foreground">
+                                    {selectedTournament.modality}
+                                  </p>
+                                </div>
+
+                                <div className="grid gap-2 text-sm text-muted-foreground">
+                                  <div className="flex items-center gap-2">
+                                    <CalendarDays className="h-4 w-4" />
+                                    {formatDateRange(selectedTournament.startDate, selectedTournament.endDate)}
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <MapPin className="h-4 w-4" />
+                                    {selectedTournament.location}
+                                  </div>
+                                </div>
                               </div>
-                              <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
-                                {registration.athletes.length} atletas
-                              </span>
+
+                              <div className="mt-6 grid gap-3 md:grid-cols-4">
+                                <div className="rounded-lg border p-4">
+                                  <div className="text-xs uppercase tracking-wide text-muted-foreground">Fluxo</div>
+                                  <div className="mt-1 text-sm font-semibold text-foreground">
+                                    {getFlowLabel(selectedTournament.type)}
+                                  </div>
+                                </div>
+                                <div className="rounded-lg border p-4">
+                                  <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                                    {getGroupLabel(selectedTournament.type)}
+                                  </div>
+                                  <div className="mt-1 text-2xl font-bold text-foreground">
+                                    {selectedTournamentRegistrations.length}
+                                  </div>
+                                </div>
+                                <div className="rounded-lg border p-4">
+                                  <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                                    {getAthleteLabel(selectedTournament.type)}
+                                  </div>
+                                  <div className="mt-1 text-2xl font-bold text-foreground">
+                                    {selectedTournamentAthletes.length}
+                                  </div>
+                                </div>
+                                <div className="rounded-lg border p-4">
+                                  <div className="text-xs uppercase tracking-wide text-muted-foreground">Vagas previstas</div>
+                                  <div className="mt-1 text-2xl font-bold text-foreground">
+                                    {selectedTournament.teams}
+                                  </div>
+                                </div>
+                              </div>
                             </div>
-                            <div className="mt-3 space-y-1 text-sm text-muted-foreground">
-                              <p>Responsável: {registration.responsibleName}</p>
-                              <p>CPF: {registration.responsibleCpf}</p>
-                              <p>Contato: {registration.email} | {registration.phone}</p>
+
+                            <div className="p-6">
+                              <Tabs defaultValue="informacoes" className="w-full">
+                                <TabsList className="mb-6 grid w-full grid-cols-3">
+                                  <TabsTrigger value="informacoes">Informacoes</TabsTrigger>
+                                  <TabsTrigger value="equipes">{getGroupLabel(selectedTournament.type)}</TabsTrigger>
+                                  <TabsTrigger value="jogadores">{getAthleteLabel(selectedTournament.type)}</TabsTrigger>
+                                </TabsList>
+
+                                <TabsContent value="informacoes" className="space-y-4">
+                                  <div className="grid gap-4 md:grid-cols-2">
+                                    <div className="rounded-lg border p-4">
+                                      <div className="text-xs uppercase tracking-wide text-muted-foreground">Nome</div>
+                                      <div className="mt-1 font-semibold text-foreground">{selectedTournament.title}</div>
+                                    </div>
+                                    <div className="rounded-lg border p-4">
+                                      <div className="text-xs uppercase tracking-wide text-muted-foreground">Modalidade</div>
+                                      <div className="mt-1 font-semibold text-foreground">{selectedTournament.modality}</div>
+                                    </div>
+                                    <div className="rounded-lg border p-4">
+                                      <div className="text-xs uppercase tracking-wide text-muted-foreground">Periodo</div>
+                                      <div className="mt-1 font-semibold text-foreground">
+                                        {formatDateRange(selectedTournament.startDate, selectedTournament.endDate)}
+                                      </div>
+                                    </div>
+                                    <div className="rounded-lg border p-4">
+                                      <div className="text-xs uppercase tracking-wide text-muted-foreground">Local</div>
+                                      <div className="mt-1 font-semibold text-foreground">{selectedTournament.location}</div>
+                                    </div>
+                                  </div>
+                                </TabsContent>
+
+                                <TabsContent value="equipes" className="space-y-4">
+                                  {registrationsQuery.isLoading && (
+                                    <p className="text-sm text-muted-foreground">Carregando inscricoes...</p>
+                                  )}
+
+                                  {registrationsQuery.isSuccess && selectedTournamentRegistrations.length === 0 && (
+                                    <div className="rounded-lg border p-6 text-center">
+                                      <p className="text-sm text-muted-foreground">
+                                        Nenhuma {selectedTournament.type === "escolar" ? "escola" : "equipe"} inscrita neste campeonato.
+                                      </p>
+                                    </div>
+                                  )}
+
+                                  {selectedTournamentRegistrations.map((registration) => (
+                                    <div key={registration.id} className="rounded-lg border p-4">
+                                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                        <div>
+                                          <h4 className="font-semibold text-foreground">{registration.organizationName}</h4>
+                                          <p className="mt-1 text-sm text-muted-foreground">
+                                            Responsavel: {registration.responsibleName}
+                                          </p>
+                                        </div>
+                                        <Badge variant="outline">
+                                          {registration.athletes.length} {selectedTournament.type === "escolar" ? "atletas" : "jogadores"}
+                                        </Badge>
+                                      </div>
+                                      <div className="mt-3 grid gap-2 text-sm text-muted-foreground md:grid-cols-2">
+                                        <p>CPF: {registration.responsibleCpf}</p>
+                                        <p>Contato: {registration.phone}</p>
+                                        <p className="md:col-span-2">E-mail: {registration.email}</p>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </TabsContent>
+
+                                <TabsContent value="jogadores" className="space-y-4">
+                                  {registrationsQuery.isLoading && (
+                                    <p className="text-sm text-muted-foreground">Carregando {getAthleteLabel(selectedTournament.type).toLowerCase()}...</p>
+                                  )}
+
+                                  {registrationsQuery.isSuccess && selectedTournamentAthletes.length === 0 && (
+                                    <div className="rounded-lg border p-6 text-center">
+                                      <p className="text-sm text-muted-foreground">
+                                        Nenhum {selectedTournament.type === "escolar" ? "atleta" : "jogador"} cadastrado neste campeonato.
+                                      </p>
+                                    </div>
+                                  )}
+
+                                  {selectedTournamentRegistrations.map((registration) => (
+                                    <div key={registration.id} className="rounded-lg border p-4">
+                                      <div className="flex items-center gap-2">
+                                        <UserRound className="h-4 w-4 text-primary" />
+                                        <h4 className="font-semibold text-foreground">{registration.organizationName}</h4>
+                                      </div>
+
+                                      {registration.athletes.length === 0 && (
+                                        <p className="mt-3 text-sm text-muted-foreground">
+                                          Nenhum {selectedTournament.type === "escolar" ? "atleta" : "jogador"} vinculado ainda.
+                                        </p>
+                                      )}
+
+                                      {registration.athletes.length > 0 && (
+                                        <div className="mt-4 grid gap-3 md:grid-cols-2">
+                                          {registration.athletes.map((athlete) => (
+                                            <div key={athlete.id} className="rounded-lg border bg-muted/30 p-3">
+                                              <div className="font-medium text-foreground">{athlete.name}</div>
+                                              <div className="mt-1 text-xs text-muted-foreground">
+                                                CPF: {athlete.cpf}
+                                              </div>
+                                              <div className="mt-1 text-xs text-muted-foreground">
+                                                Identidade: {athlete.identity}
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </TabsContent>
+                              </Tabs>
                             </div>
                           </div>
-                        ))}
-                      </TabsContent>
-
-                      <TabsContent value="modalidades" className="space-y-4">
-                        {tournamentsQuery.isLoading && (
-                          <p className="text-sm text-muted-foreground">Carregando campeonatos...</p>
                         )}
-
-                        {tournamentsQuery.isSuccess && filteredTournaments.length === 0 && (
-                          <div className="rounded-md border p-4">
-                            <p className="py-4 text-center text-sm text-muted-foreground">
-                              Nenhum campeonato cadastrado para esse fluxo.
-                            </p>
-                          </div>
-                        )}
-
-                        {filteredTournaments.map((tournament) => (
-                          <div key={tournament.id} className="rounded-lg border p-4">
-                            <div className="font-semibold text-foreground">{tournament.modality}</div>
-                            <p className="mt-1 text-sm text-muted-foreground">{tournament.title}</p>
-                            <p className="mt-2 text-xs text-muted-foreground">
-                              {formatDate(tournament.startDate)} ate {formatDate(tournament.endDate)} | {tournament.status}
-                            </p>
-                          </div>
-                        ))}
-                      </TabsContent>
-
-                      <TabsContent value="atletas" className="space-y-4">
-                        {registrationsQuery.isLoading && (
-                          <p className="text-sm text-muted-foreground">Carregando atletas...</p>
-                        )}
-
-                        {registrationsQuery.isSuccess && filteredAthletes.length === 0 && (
-                          <div className="rounded-md border p-4">
-                            <p className="py-4 text-center text-sm text-muted-foreground">
-                              Nenhum atleta cadastrado ainda.
-                            </p>
-                          </div>
-                        )}
-
-                        {filteredAthletes.map((athlete) => (
-                          <div key={athlete.id} className="rounded-lg border p-4">
-                            <div className="font-semibold text-foreground">{athlete.name}</div>
-                            <p className="mt-1 text-sm text-muted-foreground">{athlete.organizationName}</p>
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              CPF: {athlete.cpf} | Identidade: {athlete.identity}
-                            </p>
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              Campeonato: {athlete.tournamentTitle}
-                            </p>
-                          </div>
-                        ))}
-                      </TabsContent>
-                    </Tabs>
+                      </div>
+                    )}
                   </div>
                 </div>
               </ScrollReveal>
@@ -410,13 +629,13 @@ export default function Admin() {
                     </div>
                     <div className="rounded-lg border p-4">
                       <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                        {isSchoolTournament ? "Escolas inscritas" : "Times inscritos"}
+                        {getRegisteredGroupLabel(overviewType)}
                       </div>
                       <div className="mt-1 text-2xl font-bold text-foreground">{filteredRegistrations.length}</div>
                     </div>
                     <div className="rounded-lg border p-4">
                       <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                        {isSchoolTournament ? "Atletas cadastrados" : "Jogadores cadastrados"}
+                        {getAthleteLabel(overviewType)} cadastrados
                       </div>
                       <div className="mt-1 text-2xl font-bold text-foreground">{filteredAthletes.length}</div>
                     </div>
