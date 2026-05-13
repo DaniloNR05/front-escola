@@ -6,6 +6,18 @@ export type TournamentStatus =
   | "Encerrado"
   | "Em breve";
 
+export interface TournamentMatch {
+  id: string;
+  stage: string;
+  homeRegistrationId: string;
+  awayRegistrationId: string;
+  homeScore: number | null;
+  awayScore: number | null;
+  winnerRegistrationId: string | null;
+  scheduledAt: string;
+  location: string;
+}
+
 export interface Tournament {
   id: string;
   title: string;
@@ -16,6 +28,8 @@ export interface Tournament {
   location: string;
   teams: number;
   modality: string;
+  matches: TournamentMatch[];
+  championRegistrationIds: string[];
 }
 
 export interface CreateTournamentPayload {
@@ -27,4 +41,9 @@ export interface CreateTournamentPayload {
   location: string;
   teams: number;
   modality: string;
+}
+
+export interface UpdateTournamentCompetitionPayload {
+  matches: TournamentMatch[];
+  championRegistrationIds: string[];
 }

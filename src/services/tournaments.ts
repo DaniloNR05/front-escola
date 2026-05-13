@@ -1,4 +1,8 @@
-import type { CreateTournamentPayload, Tournament } from "@/types/tournament";
+import type {
+  CreateTournamentPayload,
+  Tournament,
+  UpdateTournamentCompetitionPayload,
+} from "@/types/tournament";
 import { getApiUrl } from "@/lib/api";
 
 async function handleResponse<T>(response: Response): Promise<T> {
@@ -18,6 +22,21 @@ export async function getTournaments(): Promise<Tournament[]> {
 export async function createTournament(payload: CreateTournamentPayload): Promise<Tournament> {
   const response = await fetch(getApiUrl("/api/tournaments"), {
     method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  return handleResponse<Tournament>(response);
+}
+
+export async function updateTournamentCompetition(
+  tournamentId: string,
+  payload: UpdateTournamentCompetitionPayload,
+): Promise<Tournament> {
+  const response = await fetch(getApiUrl(`/api/tournaments/${tournamentId}/competition`), {
+    method: "PATCH",
     headers: {
       "Content-Type": "application/json",
     },

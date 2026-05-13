@@ -12,10 +12,22 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRegistrations } from "@/hooks/use-registrations";
 import { useTournaments } from "@/hooks/use-tournaments";
-import { createTournament } from "@/services/tournaments";
-import type { TournamentStatus, TournamentType } from "@/types/tournament";
+import { createTournament, updateTournamentCompetition } from "@/services/tournaments";
+import type { Tournament, TournamentMatch, TournamentStatus, TournamentType } from "@/types/tournament";
 import { toast } from "sonner";
-import { CalendarDays, ChevronRight, ClipboardList, MapPin, School, Trophy, UserRound, Users } from "lucide-react";
+import {
+  CalendarDays,
+  ChevronRight,
+  ClipboardList,
+  MapPin,
+  Plus,
+  School,
+  Sword,
+  Trash2,
+  Trophy,
+  UserRound,
+  Users,
+} from "lucide-react";
 
 type TournamentFormState = {
   title: string;
@@ -77,10 +89,26 @@ function getTypeLabel(type: TournamentType) {
   return type === "escolar" ? "Jogos Escolares" : "Torneio Municipal / Comunidade";
 }
 
+function createEmptyMatch(): TournamentMatch {
+  return {
+    id: globalThis.crypto?.randomUUID?.() ?? `match-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    stage: "Fase unica",
+    homeRegistrationId: "",
+    awayRegistrationId: "",
+    homeScore: null,
+    awayScore: null,
+    winnerRegistrationId: null,
+    scheduledAt: "",
+    location: "",
+  };
+}
+
 export default function Admin() {
   const [formState, setFormState] = useState<TournamentFormState>(initialFormState);
   const [overviewType, setOverviewType] = useState<TournamentType>("municipal");
   const [selectedTournamentId, setSelectedTournamentId] = useState<string | null>(null);
+  const [competitionMatches, setCompetitionMatches] = useState<TournamentMatch[]>([]);
+  const [championRegistrationIds, setChampionRegistrationIds] = useState<string[]>([]);
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const tournamentsQuery = useTournaments();
@@ -92,6 +120,23 @@ export default function Admin() {
       queryClient.invalidateQueries({ queryKey: ["tournaments"] });
       setFormState(initialFormState);
       toast.success("Campeonato criado e publicado na listagem.");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+
+  const updateCompetitionMutation = useMutation({
+    mutationFn: ({
+      tournamentId,
+      payload,
+    }: {
+      tournamentId: string;
+      payload: { matches: TournamentMatch[]; championRegistrationIds: string[] };
+    }) => updateTournamentCompetition(tournamentId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tournaments"] });
+      toast.success("Confrontos e campeoes atualizados com sucesso.");
     },
     onError: (error: Error) => {
       toast.error(error.message);
@@ -166,6 +211,13 @@ export default function Admin() {
       ),
     [selectedTournamentRegistrations],
   );
+  const selectedTournamentRegistrationMap = useMemo(
+    () =>
+      new Map(
+        selectedTournamentRegistrations.map((registration) => [registration.id, registration]),
+      ),
+    [selectedTournamentRegistrations],
+  );
 
   useEffect(() => {
     if (filteredTournaments.length === 0) {
@@ -177,6 +229,74 @@ export default function Admin() {
       setSelectedTournamentId(filteredTournaments[0].id);
     }
   }, [filteredTournaments, selectedTournamentId]);
+
+  useEffect(() => {
+    setCompetitionMatches(selectedTournament?.matches ?? []);
+    setChampionRegistrationIds(selectedTournament?.championRegistrationIds ?? []);
+  }, [selectedTournament]);
+
+  const getRegistrationName = (registrationId: string) =>
+    selectedTournamentRegistrationMap.get(registrationId)?.organizationName ?? "Equipe nao encontrada";
+
+  const handleMatchChange = (
+    matchId: string,
+    field: keyof TournamentMatch,
+    value: string | number | null,
+  ) => {
+    setCompetitionMatches((current) =>
+      current.map((match) => {
+        if (match.id !== matchId) {
+          return match;
+        }
+
+        const nextMatch = {
+          ...match,
+          [field]: value,
+        } as TournamentMatch;
+
+        if (
+          (field === "homeRegistrationId" || field === "awayRegistrationId")
+          && nextMatch.winnerRegistrationId
+          && nextMatch.winnerRegistrationId !== nextMatch.homeRegistrationId
+          && nextMatch.winnerRegistrationId !== nextMatch.awayRegistrationId
+        ) {
+          nextMatch.winnerRegistrationId = null;
+        }
+
+        return nextMatch;
+      }),
+    );
+  };
+
+  const handleAddMatch = () => {
+    setCompetitionMatches((current) => [...current, createEmptyMatch()]);
+  };
+
+  const handleRemoveMatch = (matchId: string) => {
+    setCompetitionMatches((current) => current.filter((match) => match.id !== matchId));
+  };
+
+  const toggleChampion = (registrationId: string) => {
+    setChampionRegistrationIds((current) =>
+      current.includes(registrationId)
+        ? current.filter((item) => item !== registrationId)
+        : [...current, registrationId],
+    );
+  };
+
+  const handleSaveCompetition = () => {
+    if (!selectedTournament) {
+      return;
+    }
+
+    updateCompetitionMutation.mutate({
+      tournamentId: selectedTournament.id,
+      payload: {
+        matches: competitionMatches,
+        championRegistrationIds,
+      },
+    });
+  };
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-50">
@@ -194,16 +314,15 @@ export default function Admin() {
         )}
 
         {user?.role === "admin" && (
-        <div className="container max-w-6xl">
+        <div className="container max-w-[1440px]">
           <div className="mb-8 flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-extrabold text-foreground">Painel de Administração</h1>
-              <p className="text-muted-foreground">Crie torneios e publique automaticamente na página de campeonatos.</p>
+              <p className="text-muted-foreground">Crie campeonatos, acompanhe inscritos e monte os confrontos do torneio.</p>
             </div>
           </div>
 
-          <div className="grid gap-8 lg:grid-cols-[1fr_320px]">
-            <div className="space-y-6">
+          <div className="space-y-6">
               <Tabs defaultValue="criar" className="space-y-6">
                 <div className="rounded-xl border bg-card p-2 shadow-sm">
                   <TabsList className="grid h-auto w-full grid-cols-2 gap-2 bg-transparent p-0">
@@ -416,7 +535,7 @@ export default function Admin() {
                         )}
 
                         {filteredTournaments.length > 0 && (
-                          <div className="grid gap-6 xl:grid-cols-[320px_1fr]">
+                          <div className="grid gap-6 xl:grid-cols-[340px_1fr]">
                             <div className="space-y-3">
                               {filteredTournaments.map((tournament) => {
                                 const registrationsCount = filteredRegistrations.filter(
@@ -482,7 +601,7 @@ export default function Admin() {
                                     </div>
                                   </div>
 
-                                  <div className="mt-6 grid gap-3 md:grid-cols-4">
+                                  <div className="mt-6 grid gap-3 md:grid-cols-4 xl:grid-cols-5">
                                     <div className="rounded-lg border p-4">
                                       <div className="text-xs uppercase tracking-wide text-muted-foreground">Fluxo</div>
                                       <div className="mt-1 text-sm font-semibold text-foreground">
@@ -511,15 +630,22 @@ export default function Admin() {
                                         {selectedTournament.teams}
                                       </div>
                                     </div>
+                                    <div className="rounded-lg border p-4">
+                                      <div className="text-xs uppercase tracking-wide text-muted-foreground">Campeoes</div>
+                                      <div className="mt-1 text-2xl font-bold text-foreground">
+                                        {championRegistrationIds.length}
+                                      </div>
+                                    </div>
                                   </div>
                                 </div>
 
                                 <div className="p-6">
                                   <Tabs defaultValue="informacoes" className="w-full">
-                                    <TabsList className="mb-6 grid w-full grid-cols-3">
+                                    <TabsList className="mb-6 grid h-auto w-full grid-cols-2 gap-2 md:grid-cols-4">
                                       <TabsTrigger value="informacoes">Informacoes</TabsTrigger>
                                       <TabsTrigger value="equipes">{getGroupLabel(selectedTournament.type)}</TabsTrigger>
                                       <TabsTrigger value="jogadores">{getAthleteLabel(selectedTournament.type)}</TabsTrigger>
+                                      <TabsTrigger value="confrontos">Confrontos e Campeoes</TabsTrigger>
                                     </TabsList>
 
                                     <TabsContent value="informacoes" className="space-y-4">
@@ -624,6 +750,251 @@ export default function Admin() {
                                         </div>
                                       ))}
                                     </TabsContent>
+
+                                    <TabsContent value="confrontos" className="space-y-6">
+                                      <div className="grid gap-6 xl:grid-cols-[1.3fr_0.7fr]">
+                                        <div className="space-y-4">
+                                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                            <div>
+                                              <h4 className="flex items-center gap-2 text-lg font-semibold text-foreground">
+                                                <Sword className="h-4 w-4 text-primary" />
+                                                Confrontos do Torneio
+                                              </h4>
+                                              <p className="text-sm text-muted-foreground">
+                                                Monte as partidas com base nos times inscritos e defina os vencedores.
+                                              </p>
+                                            </div>
+                                            <Button
+                                              type="button"
+                                              variant="outline"
+                                              onClick={handleAddMatch}
+                                              disabled={selectedTournamentRegistrations.length < 2}
+                                            >
+                                              <Plus className="mr-2 h-4 w-4" />
+                                              Adicionar confronto
+                                            </Button>
+                                          </div>
+
+                                          {selectedTournamentRegistrations.length < 2 && (
+                                            <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                                              Cadastre pelo menos duas equipes inscritas para montar confrontos.
+                                            </div>
+                                          )}
+
+                                          {competitionMatches.length === 0 && selectedTournamentRegistrations.length >= 2 && (
+                                            <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                                              Nenhum confronto cadastrado ainda. Use o botão acima para criar a primeira partida.
+                                            </div>
+                                          )}
+
+                                          {competitionMatches.map((match, index) => (
+                                            <div key={match.id} className="rounded-xl border p-4">
+                                              <div className="mb-4 flex items-center justify-between gap-3">
+                                                <div>
+                                                  <div className="font-semibold text-foreground">Confronto {index + 1}</div>
+                                                  <div className="text-xs text-muted-foreground">
+                                                    {match.winnerRegistrationId
+                                                      ? `Vencedor: ${getRegistrationName(match.winnerRegistrationId)}`
+                                                      : "Vencedor ainda nao definido"}
+                                                  </div>
+                                                </div>
+                                                <Button
+                                                  type="button"
+                                                  variant="outline"
+                                                  onClick={() => handleRemoveMatch(match.id)}
+                                                >
+                                                  <Trash2 className="h-4 w-4" />
+                                                </Button>
+                                              </div>
+
+                                              <div className="grid gap-4 md:grid-cols-2">
+                                                <div className="space-y-2">
+                                                  <Label>Fase</Label>
+                                                  <Input
+                                                    value={match.stage}
+                                                    onChange={(e) => handleMatchChange(match.id, "stage", e.target.value)}
+                                                    placeholder="Ex: Semifinal"
+                                                  />
+                                                </div>
+                                                <div className="space-y-2">
+                                                  <Label>Data e horario</Label>
+                                                  <Input
+                                                    type="datetime-local"
+                                                    value={match.scheduledAt}
+                                                    onChange={(e) => handleMatchChange(match.id, "scheduledAt", e.target.value)}
+                                                  />
+                                                </div>
+                                              </div>
+
+                                              <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_110px_1fr_110px]">
+                                                <div className="space-y-2">
+                                                  <Label>Time 1</Label>
+                                                  <select
+                                                    value={match.homeRegistrationId}
+                                                    onChange={(e) => handleMatchChange(match.id, "homeRegistrationId", e.target.value)}
+                                                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                                  >
+                                                    <option value="">Selecione</option>
+                                                    {selectedTournamentRegistrations.map((registration) => (
+                                                      <option key={registration.id} value={registration.id}>
+                                                        {registration.organizationName}
+                                                      </option>
+                                                    ))}
+                                                  </select>
+                                                </div>
+                                                <div className="space-y-2">
+                                                  <Label>Placar 1</Label>
+                                                  <Input
+                                                    type="number"
+                                                    min="0"
+                                                    value={match.homeScore ?? ""}
+                                                    onChange={(e) => handleMatchChange(
+                                                      match.id,
+                                                      "homeScore",
+                                                      e.target.value === "" ? null : Number(e.target.value),
+                                                    )}
+                                                  />
+                                                </div>
+                                                <div className="space-y-2">
+                                                  <Label>Time 2</Label>
+                                                  <select
+                                                    value={match.awayRegistrationId}
+                                                    onChange={(e) => handleMatchChange(match.id, "awayRegistrationId", e.target.value)}
+                                                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                                  >
+                                                    <option value="">Selecione</option>
+                                                    {selectedTournamentRegistrations.map((registration) => (
+                                                      <option key={registration.id} value={registration.id}>
+                                                        {registration.organizationName}
+                                                      </option>
+                                                    ))}
+                                                  </select>
+                                                </div>
+                                                <div className="space-y-2">
+                                                  <Label>Placar 2</Label>
+                                                  <Input
+                                                    type="number"
+                                                    min="0"
+                                                    value={match.awayScore ?? ""}
+                                                    onChange={(e) => handleMatchChange(
+                                                      match.id,
+                                                      "awayScore",
+                                                      e.target.value === "" ? null : Number(e.target.value),
+                                                    )}
+                                                  />
+                                                </div>
+                                              </div>
+
+                                              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                                                <div className="space-y-2">
+                                                  <Label>Local da partida</Label>
+                                                  <Input
+                                                    value={match.location}
+                                                    onChange={(e) => handleMatchChange(match.id, "location", e.target.value)}
+                                                    placeholder="Ex: Ginasio Municipal"
+                                                  />
+                                                </div>
+                                                <div className="space-y-2">
+                                                  <Label>Vencedor</Label>
+                                                  <select
+                                                    value={match.winnerRegistrationId ?? ""}
+                                                    onChange={(e) => handleMatchChange(
+                                                      match.id,
+                                                      "winnerRegistrationId",
+                                                      e.target.value || null,
+                                                    )}
+                                                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                                  >
+                                                    <option value="">Definir depois</option>
+                                                    {match.homeRegistrationId && (
+                                                      <option value={match.homeRegistrationId}>
+                                                        {getRegistrationName(match.homeRegistrationId)}
+                                                      </option>
+                                                    )}
+                                                    {match.awayRegistrationId && (
+                                                      <option value={match.awayRegistrationId}>
+                                                        {getRegistrationName(match.awayRegistrationId)}
+                                                      </option>
+                                                    )}
+                                                  </select>
+                                                </div>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+
+                                        <div className="space-y-4">
+                                          <div className="rounded-xl border p-4">
+                                            <h4 className="flex items-center gap-2 text-lg font-semibold text-foreground">
+                                              <Trophy className="h-4 w-4 text-primary" />
+                                              Campeao ou Campeoes
+                                            </h4>
+                                            <p className="mt-1 text-sm text-muted-foreground">
+                                              Marque uma ou mais equipes para definir o campeao do torneio.
+                                            </p>
+
+                                            <div className="mt-4 space-y-3">
+                                              {selectedTournamentRegistrations.length === 0 && (
+                                                <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                                                  Ainda nao existem equipes inscritas para selecionar campeoes.
+                                                </div>
+                                              )}
+
+                                              {selectedTournamentRegistrations.map((registration) => (
+                                                <button
+                                                  key={registration.id}
+                                                  type="button"
+                                                  onClick={() => toggleChampion(registration.id)}
+                                                  className={`w-full rounded-lg border px-4 py-3 text-left transition ${
+                                                    championRegistrationIds.includes(registration.id)
+                                                      ? "border-primary bg-primary text-primary-foreground"
+                                                      : "border-border bg-background hover:bg-accent"
+                                                  }`}
+                                                >
+                                                  <div className="font-semibold">{registration.organizationName}</div>
+                                                  <div className={`text-xs ${
+                                                    championRegistrationIds.includes(registration.id)
+                                                      ? "text-primary-foreground/80"
+                                                      : "text-muted-foreground"
+                                                  }`}>
+                                                    {registration.athletes.length} {selectedTournament.type === "escolar" ? "atletas" : "jogadores"}
+                                                  </div>
+                                                </button>
+                                              ))}
+                                            </div>
+                                          </div>
+
+                                          <div className="rounded-xl border p-4">
+                                            <h4 className="font-semibold text-foreground">Resumo da competicao</h4>
+                                            <div className="mt-4 grid gap-3">
+                                              <div className="rounded-lg border p-3">
+                                                <div className="text-xs uppercase tracking-wide text-muted-foreground">Confrontos</div>
+                                                <div className="mt-1 text-2xl font-bold text-foreground">{competitionMatches.length}</div>
+                                              </div>
+                                              <div className="rounded-lg border p-3">
+                                                <div className="text-xs uppercase tracking-wide text-muted-foreground">Partidas com vencedor</div>
+                                                <div className="mt-1 text-2xl font-bold text-foreground">
+                                                  {competitionMatches.filter((match) => match.winnerRegistrationId).length}
+                                                </div>
+                                              </div>
+                                              <div className="rounded-lg border p-3">
+                                                <div className="text-xs uppercase tracking-wide text-muted-foreground">Campeoes definidos</div>
+                                                <div className="mt-1 text-2xl font-bold text-foreground">{championRegistrationIds.length}</div>
+                                              </div>
+                                            </div>
+
+                                            <Button
+                                              type="button"
+                                              className="mt-4 w-full"
+                                              onClick={handleSaveCompetition}
+                                              disabled={updateCompetitionMutation.isPending}
+                                            >
+                                              {updateCompetitionMutation.isPending ? "Salvando..." : "Salvar confrontos e campeoes"}
+                                            </Button>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </TabsContent>
                                   </Tabs>
                                 </div>
                               </div>
@@ -635,54 +1006,6 @@ export default function Admin() {
                   </ScrollReveal>
                 </TabsContent>
               </Tabs>
-            </div>
-
-            <div className="space-y-6">
-              <ScrollReveal delay={200}>
-                <div className="rounded-xl border bg-card p-6 shadow-sm">
-                  <h3 className="mb-4 flex items-center gap-2 font-bold">
-                    <Trophy className="h-4 w-4 text-primary" />
-                    Resumo do Fluxo
-                  </h3>
-
-                  <div className="grid gap-3">
-                    <div className="rounded-lg border p-4">
-                      <div className="text-xs uppercase tracking-wide text-muted-foreground">Campeonatos</div>
-                      <div className="mt-1 text-2xl font-bold text-foreground">{filteredTournaments.length}</div>
-                    </div>
-                    <div className="rounded-lg border p-4">
-                      <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                        {getRegisteredGroupLabel(overviewType)}
-                      </div>
-                      <div className="mt-1 text-2xl font-bold text-foreground">{filteredRegistrations.length}</div>
-                    </div>
-                    <div className="rounded-lg border p-4">
-                      <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                        {getAthleteLabel(overviewType)} cadastrados
-                      </div>
-                      <div className="mt-1 text-2xl font-bold text-foreground">{filteredAthletes.length}</div>
-                    </div>
-                  </div>
-
-                  <div className="mt-6 space-y-3">
-                    <h4 className="text-sm font-semibold text-foreground">Ultimos campeonatos desse fluxo</h4>
-
-                    {filteredTournaments.slice(0, 4).map((tournament) => (
-                      <div key={tournament.id} className="rounded-lg border p-3 text-sm">
-                        <div className="font-semibold">{tournament.title}</div>
-                        <div className="mt-1 text-xs text-muted-foreground">
-                          {formatDate(tournament.startDate)} - {formatDate(tournament.endDate)}
-                        </div>
-                      </div>
-                    ))}
-
-                    {filteredTournaments.length === 0 && (
-                      <p className="text-sm text-muted-foreground">Nenhum campeonato encontrado.</p>
-                    )}
-                  </div>
-                </div>
-              </ScrollReveal>
-            </div>
           </div>
         </div>
         )}
